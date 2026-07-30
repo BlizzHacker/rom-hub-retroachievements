@@ -1,7 +1,7 @@
 # RetroAchievements plugin for ROM Hub
 
-A project of the [Move Weight Foundation](https://foundation.moveweight.com), a
-501(c)(3).
+A project of the [Move Weight Foundation](https://foundation.moveweight.com), an
+Oklahoma non-profit corporation with 501(c)(3) status pending.
 
 Implements the RPP v1 `metadata` capability: identifies a ROM by its hash on
 [RetroAchievements](https://retroachievements.org) and writes back the game's
