@@ -1,5 +1,8 @@
 # RetroAchievements plugin for ROM Hub
 
+A project of the [Move Weight Foundation](https://foundation.moveweight.com), a
+501(c)(3).
+
 Implements the RPP v1 `metadata` capability: identifies a ROM by its hash on
 [RetroAchievements](https://retroachievements.org) and writes back the game's
 `ra_id` and title.
