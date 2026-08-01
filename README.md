@@ -1,5 +1,7 @@
 # RetroAchievements plugin for ROM Hub
 
+> Part of **[Cartridge](https://github.com/BlizzHacker/rom-hub/blob/master/BRAND.md)** by MoveWeight — a **[ROMarr](https://github.com/BlizzHacker/romarr)** / ROM Hub plugin. Unofficial; not affiliated with RomM, Gaseous or Retrom.
+
 Implements the RPP v1 `metadata` capability: identifies a ROM by its hash on
 [RetroAchievements](https://retroachievements.org) and writes back the game's
 `ra_id` and title.
