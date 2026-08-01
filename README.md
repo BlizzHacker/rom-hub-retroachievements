@@ -183,3 +183,15 @@ the Hub's CLI.
 The plugin opens no sockets. `ctx.http` is an RPC back to the Hub, which checks
 every URL against this plugin's declared allowlist (`retroachievements.org`,
 and nothing else) before fetching anything.
+
+---
+
+## Seen working
+
+The cover art and titles in this library were written by metadata plugins like this one. Where a tile still shows a placeholder, no art database carried that game — homebrew and interactive fiction mostly are not in one.
+
+![RomM populated by ROM Hub plugins](https://raw.githubusercontent.com/BlizzHacker/rom-hub/master/docs/screenshots/romm.png)
+
+Full showcase — all three backends (RomM, Gaseous, Retrom), every command transcript, and an honest account of what the pictures do *not* show: **[https://github.com/BlizzHacker/rom-hub/blob/master/docs/SHOWCASE.md](https://github.com/BlizzHacker/rom-hub/blob/master/docs/SHOWCASE.md)**
+
+Part of [ROM Hub](https://github.com/BlizzHacker/rom-hub) — install with `rom-hub plugin install retroachievements`.
