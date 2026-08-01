@@ -1,8 +1,5 @@
 # RetroAchievements plugin for ROM Hub
 
-A project of the [Move Weight Foundation](https://foundation.moveweight.com), an
-Oklahoma non-profit corporation with 501(c)(3) status pending.
-
 Implements the RPP v1 `metadata` capability: identifies a ROM by its hash on
 [RetroAchievements](https://retroachievements.org) and writes back the game's
 `ra_id` and title.
@@ -13,46 +10,96 @@ Implements the RPP v1 `metadata` capability: identifies a ROM by its hash on
 
 ## Install
 
-    rom-hub plugin install ./plugins-dev/retroachievements
+    rom-hub plugin install retroachievements
+    rom-hub plugin secret set retroachievements api_key     # prompts; nothing echoed
     rom-hub enrich retroachievements 42 --source-id <md5>
 
-## ⚠ The API key is stored in plain text
+## Where the API key is kept
 
-**Read this before you paste a key.**
+`api_key` is declared `type = "secret"`, so the Hub does **not** put it in its
+plain config. Concretely:
 
-RPP v1 reserves a `secret` config type for credentials. **This host does not
-implement it** — `rom_hub/manifest.py` rejects any field declaring
-`type = "secret"` with *"reserved in RPP v1 but not implemented in Phase 1"*.
-So `api_key` is declared as a plain `str`, and the Hub stores it **in the clear**
-in its plugin config on disk, alongside every other setting. Anything that can
-read that file can read your key.
+- it is not in `state.json`, the file that holds every other setting and the
+  one people open, dump, screenshot and commit;
+- it is redacted from `rom-hub plugin list`, `plugin config`, `plugin secret
+  list`, `browse`, `backend info`, `jobs` and `--help`, and scrubbed out of any
+  error message the Hub builds — including this plugin's own stderr if it ever
+  prints the key while crashing;
+- `rom-hub plugin secret set` prompts on a terminal, or reads stdin or an
+  environment variable, so it need never enter your shell history. Passing
+  `--value` still works and warns you that it just did.
 
-That is stated here rather than worked around, because an operator who believes
-a credential is protected treats it differently from one who knows it is not.
+**What that protects depends on your host, and the honest answer is printed by
+`rom-hub plugin secret list`.** Read it once rather than assuming:
 
-What follows from it:
+| Store | What it means |
+|---|---|
+| OS keyring | Whatever your OS gives. A locked login keychain is a real boundary; a desktop keyring unlocked at login is readable by anything running as you. |
+| file + `ROM_HUB_SECRET_KEY` | Encrypted with a key supplied from outside the box (a Docker secret, a systemd credential). The file at rest is genuinely unreadable without it. |
+| file, generated key (**the default**) | Encrypted, but the key sits in the same directory. That is **obfuscation, not secrecy** — whoever can read one file can read the other. It buys you that the key is not in `state.json` and not in any command's output. It does not survive somebody reading the directory. |
+
+On a headless Docker box — this Hub's primary deployment — you get the third
+row unless you set `ROM_HUB_SECRET_KEY`. So the advice that mattered before
+still matters, for a smaller reason:
 
 - A RetroAchievements web API key is **per-account, read-only, and resettable**.
   It is not your password and it cannot spend anything. Get it from your RA
   profile under **Settings → Keys**, where you can also reset it at any time.
-- Treat the one you put here as disposable. Reset it if the machine changes
+- Treat the one you put here as rotatable. Reset it if the machine changes
   hands, and do not reuse it anywhere that matters.
-- A test in this repo (`test_the_secret_config_type_really_is_rejected_by_this_host`)
-  pins the claim. If a later phase implements `secret`, that test fails and this
-  warning stops being true at the same moment.
+
+**What is not claimed.** The plugin *receives* the key — it has to, to make its
+request — and a plugin that chose to print its own credential into a search
+result or POST it somewhere could. That is unchanged by any of the above and is
+not what this protects against: a plugin already runs arbitrary code. What
+changed is accidental disclosure, which is the way credentials actually escape.
+
+### Upgrading from v0.1.0, which stored it in the clear
+
+**You do not re-enter the key. The Hub moves it for you.** `v0.1.0` declared
+`api_key` as a plain `str`, so anyone who configured this plugin before `v0.2.0`
+has their key sitting in `state.json` in plaintext. Nothing about that breaks and
+nothing is silently dropped: the first command that *runs* this plugin —
+`enrich`, or anything else that starts its subprocess — reads the plaintext,
+writes it to the secret store, removes it from the plain config, and prints one
+line on stderr saying so, naming the field and never the value. The run itself
+behaves identically. (`rom_hub.secrets.migrate_plaintext`, called from
+`prepare_secrets` at every subprocess-start site, so an operator who never
+reinstalls still gets moved over.)
+
+**Installing `v0.2.0` is what arms this, and nothing happens before you do.**
+Both the migration and the redaction key off the *installed* manifest's schema,
+so while `v0.1.0` is the installed version the Hub has no way to know `api_key`
+is a credential: it is not redacted from `rom-hub plugin config`, and
+`rom-hub plugin secret list` does not mention it. Upgrade first. In the window
+after upgrading but before the next run, the value is already redacted from every
+command's output and `secret list` flags it `STILL IN PLAIN CONFIG`.
+
+The one path that *does* cost you a re-entry is `rom-hub plugin secret clear`:
+it deletes from the store **and** drops un-migrated plaintext from the config, so
+running it before the migration has happened discards the key outright. That is
+deliberate — otherwise "cleared" would be a lie for exactly the operator most
+likely to be running it — but if you have not migrated yet, clear means gone.
+
+**Rotate it anyway** if that `state.json` was ever committed, shared or backed
+up. Moving a credential out of a file does not move it out of the copies.
 
 ## Config
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `api_key` | `str` | `""` | your RA web API key — **stored in the clear**, see above |
+| `api_key` | `secret` | *(none)* | your RA web API key — see [above](#where-the-api-key-is-kept). A `secret` may not declare a default: a manifest is a public file in a git repo |
 | `username` | `str` | `""` | your RA username, sent as `z`. Optional: RA's docs mark only `y` required, but RA's own client sends both |
 | `set_name` | `bool` | `true` | write the matched game's title into RomM's `name` |
 | `only_with_achievements` | `bool` | `true` | ask RA for `f=1`, the smaller list |
 
 With no `api_key` the plugin refuses **before making any request**, with a
-message naming the config key and where to get a value for it — not a 401, not
-a `KeyError`.
+message naming the config key, where to get a value for it, and the command
+that stores one — not a 401, not a `KeyError`.
+
+An unset secret arrives as the empty string rather than as a missing key, so
+that refusal is this plugin's own sentence and not a `KeyError` raised from
+inside it.
 
 ## What it sets
 
@@ -63,6 +110,31 @@ a `KeyError`.
 - **`name`** — the matched game's RA title, unless `set_name = false`. Safe to
   write because the match is by hash, which is the strongest identification
   available; turn it off if you curate names yourself.
+
+### RomM needs its own RetroAchievements key to accept `ra_id`
+
+**This is a precondition on your RomM server, not on this plugin, and without it
+every successful match still fails at the write.** Measured live against RomM
+4.9.2: `PUT /api/roms/{id}` does not simply store the `ra_id` it is handed. It
+treats the field as a request to re-identify the ROM and calls RA itself —
+`update_rom` → `meta_ra_handler.get_rom_by_id` → `get_game_extended_details` —
+signing that call with **RomM's** `RETROACHIEVEMENTS_API_KEY`. When that
+variable is unset the key is `None`, yarl refuses to build the query string, and
+the request ends as:
+
+    TypeError: Invalid variable type: value should be str, int or float,
+    got None of type <class 'NoneType'>
+
+which reaches the Hub as a bare `PUT /api/roms/2 failed (500): Internal Server
+Error`. Nothing in that message names RetroAchievements, so the symptom looks
+like a Hub fault and is not one — the hash matched, the patch was correct, and
+the server rejected it for a reason of its own.
+
+`ra_id` is the only provider id this plugin writes, so on a RomM with no RA key
+of its own the plugin **cannot** succeed. Set `RETROACHIEVEMENTS_API_KEY` on the
+RomM container (the same per-account key works; `GET /api/heartbeat` then
+reports `METADATA_SOURCES.RA_API_ENABLED: true`) before enriching. With it set,
+the same request succeeds and both fields land.
 
 ## What it does not set, and why
 
@@ -169,14 +241,75 @@ This plugin's own code is MIT (see `LICENSE`).
 
 ## Verification status
 
-The offline tests run against RetroAchievements' **own published response
-shapes**, taken from the two places the project publishes them openly on GitHub
-— the sample in `RetroAchievements/api-docs` (`docs/v1/get-game-list.md`) and
-the mock in `RetroAchievements/api-js` (`src/console/getGameList.test.ts`).
-They are not a capture we made from the live API: the endpoint needs a key, and
-no key was available when this plugin was written. **The live path is therefore
-unverified.** The no-key refusal path *has* been exercised end to end through
-the Hub's CLI.
+**The live path has been exercised end to end against the real API**, with a
+real RetroAchievements web API key, on 2026-07-31. What that run establishes,
+precisely:
+
+- `rom-hub import libretro-content "Sega - Mega Drive - Genesis/aepd.bin"`
+  filed the ROM into a disposable RomM 4.9.2, which computed
+  `md5_hash = 30c01f5a82b51fd7e23315dd070d5818` for it;
+- `API_GetGameList.php?i=1&h=1&f=1` returned 607 Mega Drive games carrying 950
+  hashes, one of which is that exact digest, on game `17392`
+  `~Homebrew~ Alter Ego`;
+- `rom-hub enrich retroachievements 2 --source-id 30c01f5a…` reported
+  `rom 2: updated name, ra_id`, and `GET /api/roms/2` afterwards returned
+  `ra_id = 17392` and `name = "~Homebrew~ Alter Ego"` — RomM's own API, read
+  back after the fact, not the Hub's report of its own work.
+
+So `ID`-as-a-JSON-string really does arrive that way and really is coerced, the
+hash comparison really does match on a live list, and the two fields really do
+land. The `secret` handling was exercised on the same run: the key went in
+through `rom-hub plugin secret set retroachievements api_key --env`, and
+`state.json` does not contain it.
+
+**What the run also established, by failing:** writing `ra_id` to a RomM with no
+`RETROACHIEVEMENTS_API_KEY` of its own is a 500 every time — see [RomM needs its
+own RetroAchievements key](#romm-needs-its-own-retroachievements-key-to-accept-ra_id).
+That is the whole reason this section could not have been written from the
+offline tests. Nothing in the fixtures could have surfaced it, because the
+fixtures stop at the plugin's own output.
+
+**Still unverified, and named rather than implied:** every console except Mega
+Drive. The match is one code path, so a hit on console 1 is a hit on console 53,
+but the *table* in `consoles.py` is only confirmed where a live lookup has
+actually run. The 401 branch has not been exercised against a genuinely rejected
+key, and neither has the >4 MiB refusal.
+
+The offline tests continue to run against RetroAchievements' **own published
+response shapes**, taken from the two places the project publishes them openly
+on GitHub — the sample in `RetroAchievements/api-docs`
+(`docs/v1/get-game-list.md`) and the mock in `RetroAchievements/api-js`
+(`src/console/getGameList.test.ts`). The live run agrees with both.
+
+### The NES is the trap this verification walked into
+
+The obvious thing to reach for is the NES build of the same game —
+`~Homebrew~ Alter Ego` is also RA game `8170` on console 7. **That chain cannot
+close, and the failure is instructive rather than incidental.** Measured on the
+same run:
+
+| | |
+|---|---|
+| libretro's `Alter Ego.nes`, RomM's `md5_hash` | `1f21f648af663fbd3c864b7283d994c7` |
+| the same file with the 16-byte iNES header skipped | `baf72625249378213dd2c0abafd1309a` |
+| RA's only published hash for game `8170` | `32bff38b91f5eb2cb523d4266b74f7b2` |
+
+Neither digest appears **anywhere** in the 1,116 NES games with achievements —
+checked against every hash in the full list, not just that game's. Two separate
+things are true at once: console 7 is not in `WHOLE_FILE_MD5`, so the whole-file
+md5 was never going to match; and the header-skipped digest does not match
+either, because libretro distributes a different build of Alter Ego from the one
+RA registered. A hash match is a match on *one dump*, not on a game.
+
+The plugin got this right without being told. Fed the NES md5 it refused before
+writing anything, and named the correct one of its two reasons:
+
+    no RetroAchievements game on console 7 carries the hash 1f21f648… — For
+    this console RetroAchievements does NOT hash the whole file … so RomM's
+    md5 will never match no matter how well known the game is.
+
+That message is the reason the miss took minutes to diagnose instead of hours,
+and it is now live-verified too.
 
 ## Notes
 
